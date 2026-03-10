@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Check-in | Attendance</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background: #f0f2f5; height: 100vh; display: flex; align-items: center; justify-content: center; font-family: sans-serif; }
+        .checkin-card { background: white; width: 90%; max-width: 400px; padding: 30px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); text-align: center; }
+        .icon-circle { width: 70px; height: 70px; background: #eef2ff; color: #4361ee; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 24px; }
+        input[type="text"] { border-radius: 12px; padding: 12px; border: 2px solid #eee; text-align: center; font-size: 1.1rem; font-weight: bold; text-transform: uppercase; }
+        input[type="text"]:focus { border-color: #4361ee; box-shadow: none; }
+        .btn-submit { background: #4361ee; color: white; border: none; padding: 12px; border-radius: 12px; font-weight: 600; width: 100%; transition: 0.3s; }
+        .btn-submit:disabled { opacity: 0.6; }
+    </style>
+</head>
+<body>
+
+<div class="checkin-card">
+    <div class="icon-circle">📍</div>
+    <h3 class="fw-bold mb-1">Student Check-in</h3>
+    <p class="text-muted small mb-4">Please verify your location and enter USN</p>
+
+    <form id="attendanceForm">
+        <input type="hidden" name="token" value="{{ token }}">
+        <input type="hidden" name="lat" id="lat">
+        <input type="hidden" name="lon" id="lon">
+
+        <div class="mb-3">
+            <input type="text" name="usn" class="form-control" placeholder="Enter USN" required>
+        </div>
+
+        <div id="nameContainer" class="mb-4 d-none">
+            <input type="text" name="name" id="nameField" class="form-control" placeholder="Enter Full Name">
+            <p class="text-primary small mt-1">First time scanning? Please register.</p>
+        </div>
+
+        <button type="submit" id="submitBtn" class="btn-submit">Submit Attendance</button>
+    </form>
+    <div id="statusMsg" class="mt-3 small"></div>
+</div>
+
+<script>
+function getDeviceId() {
+    let deviceId = localStorage.getItem("device_id");
+    if (!deviceId) {
+        deviceId = crypto.randomUUID();
+        localStorage.setItem("device_id", deviceId);
+    }
+    return deviceId;
+}
+
+navigator.geolocation.getCurrentPosition(
+    function(p){
+        document.getElementById("lat").value = p.coords.latitude;
+        document.getElementById("lon").value = p.coords.longitude;
+        document.getElementById("statusMsg").innerHTML = "✅ Location Verified";
+        document.getElementById("statusMsg").className = "mt-3 small text-success";
+    },
+    function(err) {
+        document.getElementById("statusMsg").innerHTML = "❌ Please enable GPS to check in";
+        document.getElementById("statusMsg").className = "mt-3 small text-danger";
+    }
+);
+
+let submitted = false;
+
+document.getElementById("attendanceForm").onsubmit = function(e){
+    e.preventDefault();
+    if(submitted) return;
+    
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = true;
+    btn.innerText = "Processing...";
+    submitted = true;
+
+    const formData = new FormData(this);
+    formData.append("device_id", getDeviceId());
+
+    fetch("/submit", {
+        method: "POST",
+        body: formData
+    }).then(r=>r.json()).then(data=>{
+        // Handle new user logic
+        if(data.status === "new_user"){
+            document.getElementById("nameContainer").classList.remove("d-none");
+            document.getElementById("nameField").setAttribute("required", "true");
+            alert(data.message);
+        } 
+        // Handle 7-hour early warning
+        else if (data.status === "early") {
+            alert(data.message);
+        }
+        else if(data.status === "confirm_logout"){
+            if(confirm(data.message)){
+                fetch("/logout", {
+                    method: "POST",
+                    body: formData
+                }).then(r=>r.json()).then(res=>{
+                    alert(res.message);
+                    window.location.reload();
+                });
+            }
+        } else {
+            alert(data.message);
+        }
+        btn.disabled = false;
+        btn.innerText = "Submit Attendance";
+        submitted = false;
+    });
+};
+</script>
+</body>
+</html>

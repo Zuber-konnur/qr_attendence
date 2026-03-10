@@ -1,0 +1,6 @@
+Flask
+pyotp
+pandas
+supabase
+python-dotenv
+gunicorn
