@@ -269,45 +269,64 @@ def manage_list():
 @login_required
 def upload_users_csv():
     if 'file' not in request.files: 
-        return redirect(url_for('admin_dashboard'))
+        return redirect(url_for('admin_dashboard', upload='error'))
     
     file = request.files['file']
     if file.filename == '':
-        return redirect(url_for('admin_dashboard'))
+        return redirect(url_for('admin_dashboard', upload='error'))
 
     try:
-        # 1. Read CSV and replace NaN (blanks) with empty strings
+        # 1. Read CSV and clean data
         df = pd.read_csv(file).fillna("")
+        df.columns = df.columns.str.lower().str.strip() 
         
-        # 2. Convert all headers to lowercase so it doesn't matter if you type 'USN' or 'usn'
-        df.columns = df.columns.str.lower()
-        
-        # 3. Ensure the required columns exist, fill missing ones if needed
         required_cols = ['usn', 'name', 'domain', 'batch']
         for col in required_cols:
             if col not in df.columns:
-                df[col] = "" # Add missing column safely
+                df[col] = "" 
+        
+        # --- NEW: Format USNs and drop duplicates from the CSV itself ---
+        df['usn'] = df['usn'].astype(str).str.strip().str.upper()
+        df = df[df['usn'] != ""] # Drop rows where USN is entirely blank
+        df = df.drop_duplicates(subset=['usn'], keep='last') # If a USN appears twice, keep the last one
+
+        # 2. Extract unique domains and batches
+        unique_domains = [str(d).strip() for d in df['domain'].unique() if str(d).strip()]
+        unique_batches = [str(b).strip() for b in df['batch'].unique() if str(b).strip()]
+
+        # 3. Fetch existing domains/batches and insert only NEW ones
+        existing_domains = [d['name'] for d in supabase.table("domains").select("name").execute().data]
+        new_domains = [{"name": d} for d in unique_domains if d not in existing_domains]
+        if new_domains:
+            supabase.table("domains").insert(new_domains).execute()
+
+        existing_batches = [b['name'] for b in supabase.table("batches").select("name").execute().data]
+        new_batches = [{"name": b} for b in unique_batches if b not in existing_batches]
+        if new_batches:
+            supabase.table("batches").insert(new_batches).execute()
                 
-        # 4. Filter only the required columns and convert to dictionary
+        # 4. Prepare User Data for Bulk Upsert
         records = df[required_cols].to_dict('records')
+        valid_users = []
         
         for rec in records:
-            # Only upload if a USN actually exists in the row
-            if rec.get('usn'):
-                # Clean up the data before inserting
-                rec['usn'] = str(rec['usn']).strip().upper()
-                rec['name'] = str(rec['name']).strip()
-                rec['domain'] = str(rec['domain']).strip()
-                rec['batch'] = str(rec['batch']).strip()
+            valid_users.append({
+                'usn': rec['usn'],
+                'name': str(rec['name']).strip(),
+                'domain': str(rec['domain']).strip(),
+                'batch': str(rec['batch']).strip()
+            })
                 
-                # Upsert into Supabase
-                supabase.table("users").upsert(rec).execute()
-                
-    except Exception as e:
-        print(f"CSV Upload Error: {e}") # This will print to your terminal if it fails
+        # 5. Bulk Upsert (Now guaranteed to have no internal duplicates)
+        if valid_users:
+            supabase.table("users").upsert(valid_users, on_conflict="usn").execute()
+            
+        return redirect(url_for('admin_dashboard', upload='success'))
         
-    return redirect(url_for('admin_dashboard'))
-
+    except Exception as e:
+        print(f"CSV Upload Error: {e}") 
+        return redirect(url_for('admin_dashboard', upload='error'))
+    
 @app.route('/admin/download_csv')
 @login_required
 def download_csv():

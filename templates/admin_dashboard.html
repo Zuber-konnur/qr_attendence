@@ -106,6 +106,33 @@
             </div>
         </div>
     </div>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const uploadStatus = urlParams.get('upload');
+            const alertContainer = document.createElement('div');
+            
+            if (uploadStatus === 'success') {
+                alertContainer.innerHTML = `
+                    <div class="alert alert-success alert-dismissible fade show shadow-sm" role="alert">
+                        <i class="fas fa-check-circle me-2"></i><strong>Success!</strong> CSV data uploaded. Users, Domains, and Batches have been updated safely.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>`;
+                document.querySelector('.container').prepend(alertContainer);
+                
+                // Clean the URL so the alert doesn't stay if the user refreshes
+                const cleanUrl = window.location.pathname + "?date={{ current_date }}&domain={{ current_domain }}&view={{ current_view }}";
+                window.history.replaceState({}, document.title, cleanUrl);
+            } else if (uploadStatus === 'error') {
+                alertContainer.innerHTML = `
+                    <div class="alert alert-danger alert-dismissible fade show shadow-sm" role="alert">
+                        <i class="fas fa-exclamation-triangle me-2"></i><strong>Error!</strong> Something went wrong uploading the CSV. Check your file format or the server console.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>`;
+                document.querySelector('.container').prepend(alertContainer);
+            }
+        });
+    </script>
 
     <ul class="nav nav-tabs mb-3 border-bottom-0">
         <li class="nav-item">
